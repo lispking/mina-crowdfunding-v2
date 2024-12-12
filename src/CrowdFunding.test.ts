@@ -109,7 +109,6 @@ describe('CrowdFunding', () => {
   })
 
   it('withdraw success', async () => {
-    const amount = UInt64.from(100);
     expect(zkApp.account.balance.get()).toEqual(UInt64.from(0));
 
     // clear balance
@@ -133,7 +132,7 @@ describe('CrowdFunding', () => {
 
     // contribute
     txn = await Mina.transaction(user1, async () => {
-      await zkApp.contribute(amount);
+      await zkApp.contribute(UInt64.from(100));
     });
     await txn.prove();
     await txn.sign([user1Key, zkAppPrivateKey]).send();

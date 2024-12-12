@@ -29,7 +29,6 @@ export class CrowdFunding extends SmartContract {
   @state(UInt32) deadline = State<UInt32>();
   @state(UInt64) minimumInvestment = State<UInt64>();
   @state(UInt64) hardCap = State<UInt64>();
-  @state(UInt32) withdrawnCnt = State<UInt32>();
 
   events = {
     Deploy: DeployEvent,
@@ -54,7 +53,6 @@ export class CrowdFunding extends SmartContract {
     this.deadline.set(args.deadline);
     this.minimumInvestment.set(args.minimumInvestment);
     this.hardCap.set(args.hardCap);
-    this.withdrawnCnt.set(UInt32.from(0));
     this.emitEvent('Deploy', {
       who: sender,
       deadline: args.deadline,
@@ -81,6 +79,7 @@ export class CrowdFunding extends SmartContract {
   }
 
   @method async withdraw() {
+    this.ensureWithdrawal();
     const sender = this.sender.getAndRequireSignature()
     sender.equals(this.investor.getAndRequireEquals()).assertTrue("Only investor can withdraw");
     
@@ -121,15 +120,20 @@ export class CrowdFunding extends SmartContract {
     balance.assertLessThan(hardCap, "HardCap reached");
   }
 
+  async ensureWithdrawal() {
+    const currentTime = this.network.blockchainLength.getAndRequireEquals();
+    const deadline = this.deadline.getAndRequireEquals();
+
+    const balance = this.account.balance.getAndRequireEquals();
+    const hardCap = this.hardCap.getAndRequireEquals();
+    Bool.or(currentTime.greaterThanOrEqual(deadline), balance.greaterThanOrEqual(hardCap)).assertTrue("Withdrawal not allowed");
+  }
+
   calculateAmount(amount: UInt64) {
     const balance = this.account.balance.getAndRequireEquals();
     const hardCap = this.hardCap.getAndRequireEquals();
     const remaining = hardCap.sub(balance);
     return Provable.if(amount.lessThanOrEqual(remaining), amount, remaining);
-  }
-
-  incrementWithdrawal() {
-    this.withdrawnCnt.set(this.withdrawnCnt.get().add(1));
   }
 
   getInvestor() {
