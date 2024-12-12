@@ -81,16 +81,26 @@ export class CrowdFunding extends SmartContract {
   }
 
   @method async withdraw() {
-    const withdrawPercentage = this.ensureWithdraw();
-    const hardCap = this.hardCap.getAndRequireEquals();
-    const amountToWithdraw = hardCap.mul(withdrawPercentage).div(UInt64.from(100));
+    const sender = this.sender.getAndRequireSignature()
+    sender.equals(this.investor.getAndRequireEquals()).assertTrue("Only investor can withdraw");
+    
+    const totalAmount = this.account.balance.getAndRequireEquals();
+    totalAmount.assertGreaterThan(UInt64.from(0), "No balance to withdraw");
 
-    const sender = this.sender.getAndRequireSignature();
-    this.send({ to: sender, amount: amountToWithdraw });
+    const senderUpdate = AccountUpdate.createSigned(sender);
+    this.send({ to: senderUpdate, amount: totalAmount });
+
+    senderUpdate.account.timing.set({
+      initialMinimumBalance: totalAmount,
+      cliffTime: UInt32.from(0),
+      cliffAmount: totalAmount.mul(2).div(10),
+      vestingPeriod: UInt32.from(200),
+      vestingIncrement: totalAmount.div(10),
+    });
 
     this.emitEvent('Withdrawn', { 
       who: sender, 
-      amount: amountToWithdraw, 
+      amount: totalAmount, 
       timestamp: this.network.blockchainLength.getAndRequireEquals() 
     });
   }
@@ -116,29 +126,6 @@ export class CrowdFunding extends SmartContract {
     const hardCap = this.hardCap.getAndRequireEquals();
     const remaining = hardCap.sub(balance);
     return Provable.if(amount.lessThanOrEqual(remaining), amount, remaining);
-  }
-
-  ensureWithdraw() {
-    const sender = this.sender.getAndRequireSignature()
-    sender.equals(this.investor.getAndRequireEquals()).assertTrue("Only investor can withdraw");
-    
-    const totalAmount = this.account.balance.getAndRequireEquals();
-    totalAmount.assertGreaterThan(UInt64.from(0), "No balance to withdraw");
-
-    const currentTime = this.network.blockchainLength.getAndRequireEquals();
-    const deadline = this.deadline.getAndRequireEquals();
-    currentTime.assertGreaterThanOrEqual(deadline, "Deadline reached");
-    const blocksSinceDeadline = currentTime.sub(deadline);
-
-    const withdrawnCnt = this.withdrawnCnt.getAndRequireEquals();
-    const isInitialWithdrawal = withdrawnCnt.equals(UInt32.from(0));
-
-    const withdrawalInterval = withdrawnCnt.mul(200);
-    const isSubsequentWithdrawal = blocksSinceDeadline.greaterThanOrEqual(withdrawalInterval);
-    Bool.or(isInitialWithdrawal, isSubsequentWithdrawal).assertTrue("Withdrawal not allowed");
-
-    this.incrementWithdrawal();
-    return Provable.if(isInitialWithdrawal, UInt64.from(20), UInt64.from(10));
   }
 
   incrementWithdrawal() {
